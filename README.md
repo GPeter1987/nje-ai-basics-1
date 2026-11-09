@@ -34,6 +34,16 @@ python scripts/download_models.py
 pytest
 ```
 
+## Felismerési pontosság mérése
+
+A képeket almappákba kell tenni (a mappa neve az étel címkéje), vagy mellé egy `labels.csv` fájlt (`file,label`). A Food-101-en kívüli ételek mehetnek pl. egy `egyeb/` mappába.
+
+```bash
+python scripts/evaluate_recognizer.py --images eval_images
+```
+
+Az eredmény az `eval_results/<időbélyeg>/` mappába kerül: `report.md`, `results.csv`, `summary.json`.
+
 ## Projektstruktúra
 
 ```

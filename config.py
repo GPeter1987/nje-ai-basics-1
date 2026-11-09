@@ -31,8 +31,8 @@ CONFIDENCE_THRESHOLD = 0.40
 
 # --- 2. modell: strukturált elemzés (Qwen2.5-1.5B-Instruct) -----------------
 
-LLM_MODEL = "Qwen/Qwen2.5-1.5B-Instruct"   # Transformers-backend
-OLLAMA_MODEL = "qwen2.5:1.5b"              # Ollama-backend
+LLM_MODEL = "Qwen/Qwen2.5-1.5B-Instruct"  # Transformers-backend
+OLLAMA_MODEL = "qwen2.5:1.5b"  # Ollama-backend
 OLLAMA_URL = os.getenv("NUTRILENS_OLLAMA_URL", "http://localhost:11434")
 
 LLM_BACKENDS = ("transformers", "ollama")

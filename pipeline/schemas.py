@@ -66,8 +66,18 @@ class Recognition(BaseModel):
     def _top3_sorted(self) -> Recognition:
         scores = [c.score for c in self.top3]
         if scores != sorted(scores, reverse=True):
-            raise ValueError("a top3 listának csökkenő bizonyosság szerint kell rendezettnek lennie")
+            raise ValueError(
+                "a top3 listának csökkenő bizonyosság szerint kell rendezettnek lennie"
+            )
         return self
+
+    @property
+    def needs_review(self) -> bool:
+        """Bizonytalan-e még a felismerés (alacsony bizonyosság, és nincs is megerősítve).
+
+        Ilyenkor a UI figyelmeztet (F3), a 2. modell pedig a top-3 jelöltet is megkapja.
+        """
+        return not (self.is_confident or self.manually_selected)
 
 
 # --- 2. modell: strukturált elemzés ------------------------------------------
@@ -147,7 +157,9 @@ class Recommendation(BaseModel):
     name_hu: str | None = None
     similarity: float = Field(ge=-1.0, le=1.0, description="Koszinusz-hasonlóság")
     kcal_100g: float = Field(ge=0)
-    kcal_diff_100g: float = Field(description="Ajánlott − felismert étel kcal/100 g (negatív = kevesebb)")
+    kcal_diff_100g: float = Field(
+        description="Ajánlott − felismert étel kcal/100 g (negatív = kevesebb)"
+    )
     shared_items: list[str] = Field(
         default_factory=list, description="Közös összetevők/címkék az indokláshoz"
     )
@@ -165,12 +177,19 @@ class StepLog(BaseModel):
     output: Any = None
     duration_ms: float = Field(ge=0)
     ok: bool = True
-    error: str | None = None
+    error: str | None = Field(
+        default=None, description="Érthető hibaüzenet, ha a lépés hibára futott"
+    )
+    note: str | None = Field(
+        default=None, description="Megjegyzés, pl. 'tartalék-érték' vagy 'ideiglenes helyettesítő'"
+    )
 
 
 class PipelineResult(BaseModel):
     """A teljes lánc eredménye – ezt kapja meg a Streamlit-felület."""
 
+    grams: float | None = None
+    mode: RecommendMode = "similar"
     recognition: Recognition | None = None
     analysis: DishAnalysis | None = None
     nutrition: Nutrition | None = None
