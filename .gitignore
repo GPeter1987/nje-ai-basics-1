@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+
+# Generált adatbázis (scripts/build_db.py állítja elő)
+data/nutrilens.db
+
+# Helyben letöltött modellek (scripts/download_models.py)
+models/
+
+# Pontosságmérés kimenetei
+eval_results/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

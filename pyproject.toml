@@ -1,0 +1,20 @@
+[project]
+name = "nutrilens"
+version = "0.1.0"
+description = "NutriLens – AI ételfelismerő és ajánló (3 modellből álló lánc)"
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+# A projekt gyökere legyen az importútvonalon (import config, import pipeline...)
+pythonpath = ["."]
+testpaths = ["tests"]
+markers = [
+    "slow: valódi modellt tölt le / futtat (kihagyás: pytest -m 'not slow')",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]

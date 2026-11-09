@@ -1,0 +1,26 @@
+# NutriLens – függőségek (Python 3.11+)
+#
+# Tipp: CPU-s torch (kisebb, nem kell hozzá videókártya):
+#   pip install torch --index-url https://download.pytorch.org/whl/cpu
+#   pip install -r requirements.txt
+
+# Felület
+streamlit>=1.38
+
+# Modellek
+torch>=2.2
+transformers>=4.44
+sentence-transformers>=3.0
+huggingface_hub>=0.24
+
+# Adatkezelés és validálás
+pydantic>=2.6
+numpy>=1.26
+pandas>=2.1
+Pillow>=10.0
+
+# Ollama-backend (opcionális, F12)
+requests>=2.31
+
+# Tesztek
+pytest>=8.0
