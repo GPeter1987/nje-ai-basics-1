@@ -30,6 +30,12 @@ python scripts/download_models.py
 
 ## Tesztek
 
+A C-rész részletes leírása, Windows-indítása, adatforrásai és integrációs korlátai:
+[Ajánló, adatbázis és felület](docs/C_modul.md).
+
+**Jelenlegi állapot:** a C-rész implementálva; a B-féle LLM-elemző még helyettesítő.
+Az adatbázis USDA-alapanyagokból számolt mintarecepteket tartalmaz, nem mért készételadatokat.
+
 ```bash
 pytest
 ```

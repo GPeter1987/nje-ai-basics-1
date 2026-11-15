@@ -32,6 +32,22 @@ def png_bytes() -> bytes:
     return buffer.getvalue()
 
 
+@pytest.fixture(autouse=True)
+def isolate_c_modules(request, monkeypatch):
+    """A stub-ág tesztje ne függjön a valódi C adatbázistól vagy modellletöltéstől.
+
+    A valódi C-modulok integrációját a test_c_pipeline.py ellenőrzi.
+    """
+    if request.node.get_closest_marker("slow"):
+        return
+
+    def pending(*args, **kwargs):
+        raise NotImplementedError("A tesztben szándékosan helyettesítő fut.")
+
+    monkeypatch.setattr(nutrition_module, "compute_nutrition", pending)
+    monkeypatch.setattr(recommender, "recommend", pending)
+
+
 @pytest.fixture
 def fake_vit(monkeypatch):
     """Az 1. modell helyett: 87% chicken_curry."""
