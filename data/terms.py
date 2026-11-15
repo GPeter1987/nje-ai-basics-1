@@ -4,6 +4,7 @@ Az adatbázis összetevői, allergénjei és címkéi angol, kanonikus kulcsok.
 Ismeretlen magyar kifejezést nem próbálunk kitalált fordítással helyettesíteni.
 """
 
+# fmt: off
 TERMS = {
     "főétel": "main course", "leves": "soup", "saláta": "salad",
     "desszert": "dessert", "köret": "side dish", "előétel": "appetizer",
@@ -66,6 +67,7 @@ EU_ALLERGENS = frozenset({
     "gluten", "crustaceans", "eggs", "fish", "peanuts", "soybeans", "milk",
     "tree nuts", "celery", "mustard", "sesame", "sulphites", "lupin", "molluscs",
 })
+# fmt: on
 
 
 def english(term: str) -> str:

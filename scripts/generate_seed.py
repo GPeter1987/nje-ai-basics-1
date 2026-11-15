@@ -230,7 +230,9 @@ avocado_egg_bowl|Avokádós tojástál|breakfast|international|fresh creamy|eggs
 
 
 def generate() -> int:
-    ingredients = json.loads((config.DATA_DIR / "usda_ingredients.json").read_text(encoding="utf-8"))
+    ingredients = json.loads(
+        (config.DATA_DIR / "usda_ingredients.json").read_text(encoding="utf-8")
+    )
     recipes = []
     for line in FOOD101_RECIPES.strip().splitlines():
         key, category, cuisine, method, recipe = line.split("|")
@@ -238,17 +240,42 @@ def generate() -> int:
     recipes.extend(tuple(line.split("|")) for line in EXTRA_RECIPES.strip().splitlines())
     foods = []
     for key, name_hu, category, cuisine, method, recipe in recipes:
-        parts = [(name, float(weight)) for item in recipe.split(",")
-                 for name, weight in [item.rsplit(":", 1)]]
+        parts = [
+            (name, float(weight))
+            for item in recipe.split(",")
+            for name, weight in [item.rsplit(":", 1)]
+        ]
         total = sum(weight for _, weight in parts)
         if total != 100:
             raise ValueError(f"{key}: nem 100 g-os recept: {total}")
         allergens = sorted({a for name, _ in parts for a in ingredients[name]["allergens"]})
         tags = method.split()
-        animal = {"chicken", "beef", "raw beef", "pork", "duck", "turkey", "salmon",
-                  "raw salmon", "tuna", "raw tuna", "cod", "shrimp", "lobster", "crab",
-                  "squid", "clam", "mussels", "oysters", "scallops", "snail", "octopus",
-                  "goose liver", "bacon", "sausage"}
+        animal = {
+            "chicken",
+            "beef",
+            "raw beef",
+            "pork",
+            "duck",
+            "turkey",
+            "salmon",
+            "raw salmon",
+            "tuna",
+            "raw tuna",
+            "cod",
+            "shrimp",
+            "lobster",
+            "crab",
+            "squid",
+            "clam",
+            "mussels",
+            "oysters",
+            "scallops",
+            "snail",
+            "octopus",
+            "goose liver",
+            "bacon",
+            "sausage",
+        }
         names = [name for name, _ in parts]
         if not animal.intersection(names):
             tags.append("vegetarian")
@@ -263,14 +290,23 @@ def generate() -> int:
             f"NDB {ingredients[name]['ndb']} {name} {weight:g}g" for name, weight in parts
         )
         food = {
-            "key": key, "name_en": name_en, "name_hu": name_hu,
-            "category": category, "cuisine": cuisine,
+            "key": key,
+            "name_en": name_en,
+            "name_hu": name_hu,
+            "category": category,
+            "cuisine": cuisine,
             "ingredients": json.dumps(names, ensure_ascii=False),
-            "allergens": json.dumps(allergens), "tags": json.dumps(tags),
-            **{f"{nutrient}_100g": round(sum(ingredients[name][nutrient] * weight / 100
-               for name, weight in parts), 3) for nutrient in ("kcal", "protein", "carbs", "fat")},
+            "allergens": json.dumps(allergens),
+            "tags": json.dumps(tags),
+            **{
+                f"{nutrient}_100g": round(
+                    sum(ingredients[name][nutrient] * weight / 100 for name, weight in parts), 3
+                )
+                for nutrient in ("kcal", "protein", "carbs", "fat")
+            },
             "description_en": f"{name_en}; {category}; {cuisine}; {', '.join(names)}; {', '.join(tags)}.",
-            "in_food101": int(key in FOOD101_HU), "source": source,
+            "in_food101": int(key in FOOD101_HU),
+            "source": source,
         }
         foods.append(food)
     if len(foods) != 201 or len({f["key"] for f in foods}) != 201:

@@ -99,7 +99,10 @@ def test_cache_is_validated_and_model_specific(c_database, dish_analysis):
 
 def test_history_survives_rebuild_and_sums_only_selected_day(c_database):
     recognition = recognizer.Recognition(
-        key="chicken_curry", name_en="Chicken curry", score=0.8, is_confident=True,
+        key="chicken_curry",
+        name_en="Chicken curry",
+        score=0.8,
+        is_confident=True,
         image_hash="test-hash",
         top3=[recognizer.Candidate(key="chicken_curry", name_en="Chicken curry", score=0.8)],
     )
@@ -108,8 +111,10 @@ def test_history_survives_rebuild_and_sums_only_selected_day(c_database):
     second_id = db.save_history(recognition, nutrition)
     yesterday = date.today() - timedelta(days=1)
     with db.connection() as conn:
-        conn.execute("UPDATE history SET created_at = ? WHERE id = ?",
-                     (yesterday.isoformat() + "T12:00:00+01:00", first_id))
+        conn.execute(
+            "UPDATE history SET created_at = ? WHERE id = ?",
+            (yesterday.isoformat() + "T12:00:00+01:00", first_id),
+        )
     build_db.build_database()
     history = db.list_history()
     assert len(history) == 2
@@ -122,11 +127,15 @@ def test_history_survives_rebuild_and_sums_only_selected_day(c_database):
 
 def test_history_supports_ai_estimate_without_food_row(c_database):
     recognition = recognizer.Recognition(
-        key="unknown_food", name_en="Unknown food", score=0.2, is_confident=False,
+        key="unknown_food",
+        name_en="Unknown food",
+        score=0.2,
+        is_confident=False,
         top3=[recognizer.Candidate(key="pizza", name_en="Pizza", score=0.2)],
     )
-    nutrition = Nutrition(dish_key="unknown_food", grams=100, kcal=100,
-                          protein=10, carbs=10, fat=2, is_estimate=True)
+    nutrition = Nutrition(
+        dish_key="unknown_food", grams=100, kcal=100, protein=10, carbs=10, fat=2, is_estimate=True
+    )
     db.save_history(recognition, nutrition)
     assert db.list_history()[0]["is_estimate"] == 1
     assert db.list_history()[0]["name_hu"] == "unknown_food"
@@ -145,11 +154,19 @@ def rewrite_csv(tmp_path, change):
     return path
 
 
-@pytest.mark.parametrize("column,value", [
-    ("kcal_100g", "nan"), ("fat_100g", "-1"), ("protein_100g", "101"),
-    ("allergens", '["unknown"]'), ("ingredients", '{}'), ("ingredients", '[]'),
-    ("in_food101", "7"), ("source", ""),
-])
+@pytest.mark.parametrize(
+    "column,value",
+    [
+        ("kcal_100g", "nan"),
+        ("fat_100g", "-1"),
+        ("protein_100g", "101"),
+        ("allergens", '["unknown"]'),
+        ("ingredients", "{}"),
+        ("ingredients", "[]"),
+        ("in_food101", "7"),
+        ("source", ""),
+    ],
+)
 def test_bad_csv_does_not_replace_existing_database(c_database, tmp_path, column, value):
     before = db.get_food("pizza")
     path = rewrite_csv(tmp_path, lambda rows: rows[0].__setitem__(column, value))
@@ -179,3 +196,22 @@ def test_model_error_preserves_previous_foods(c_database, monkeypatch):
     with pytest.raises(RuntimeError):
         build_db.build_database()
     assert db.get_food("pizza") == before
+
+
+def test_missing_database_is_not_created_as_empty_file(tmp_path, monkeypatch, dish_analysis):
+    """Regresszió: az elemzés-cache egy üres nutrilens.db-t hozott létre, ha a DB hiányzott."""
+    from pipeline import analyzer
+
+    monkeypatch.setattr(config, "DB_PATH", tmp_path / "missing.db")
+    for call in (
+        lambda: db.get_analysis("pizza", "model"),
+        lambda: db.save_analysis(dish_analysis, "model"),
+        lambda: db.list_history(),
+        lambda: db.daily_summary(),
+    ):
+        with pytest.raises(FileNotFoundError):
+            call()
+    # az analyzer cache-olvasása / -írása csendben kihagyja a hiányzó DB-t
+    assert analyzer._get_cached("pizza") is None
+    analyzer._save_cached(dish_analysis)
+    assert not config.DB_PATH.exists()

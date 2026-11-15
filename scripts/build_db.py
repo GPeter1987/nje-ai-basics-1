@@ -23,8 +23,21 @@ from pipeline.food101_labels import FOOD101_LABELS  # noqa: E402
 from pipeline.recommender import encode_texts  # noqa: E402
 
 FIELDS = (
-    "key", "name_en", "name_hu", "category", "cuisine", "ingredients", "allergens", "tags",
-    "kcal_100g", "protein_100g", "carbs_100g", "fat_100g", "description_en", "in_food101", "source",
+    "key",
+    "name_en",
+    "name_hu",
+    "category",
+    "cuisine",
+    "ingredients",
+    "allergens",
+    "tags",
+    "kcal_100g",
+    "protein_100g",
+    "carbs_100g",
+    "fat_100g",
+    "description_en",
+    "in_food101",
+    "source",
 )
 
 
@@ -90,13 +103,19 @@ def build_database(seed_path: Path | None = None, *, embeddings: bool = True) ->
     with db.connection() as conn:
         conn.execute("DELETE FROM foods")
         for i, food in enumerate(foods):
-            values = [json.dumps(food[c], ensure_ascii=False) if isinstance(food[c], list)
-                      else food[c] for c in FIELDS]
-            values.extend((vectors[i].astype("float32").tobytes(), config.EMBEDDING_MODEL)
-                          if vectors is not None else (None, None))
+            values = [
+                json.dumps(food[c], ensure_ascii=False) if isinstance(food[c], list) else food[c]
+                for c in FIELDS
+            ]
+            values.extend(
+                (vectors[i].astype("float32").tobytes(), config.EMBEDDING_MODEL)
+                if vectors is not None
+                else (None, None)
+            )
             placeholders = ", ".join("?" for _ in columns)
             conn.execute(
-                f"INSERT INTO foods ({', '.join(columns)}) VALUES ({placeholders})", values,
+                f"INSERT INTO foods ({', '.join(columns)}) VALUES ({placeholders})",
+                values,
             )
     return len(foods)
 
@@ -104,8 +123,11 @@ def build_database(seed_path: Path | None = None, *, embeddings: bool = True) ->
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--seed", type=Path, default=config.SEED_CSV_PATH)
-    parser.add_argument("--without-embeddings", action="store_true",
-                        help="Csak adatok; az ajánlóhoz később teljes újraépítés szükséges.")
+    parser.add_argument(
+        "--without-embeddings",
+        action="store_true",
+        help="Csak adatok; az ajánlóhoz később teljes újraépítés szükséges.",
+    )
     args = parser.parse_args()
     try:
         count = build_database(args.seed, embeddings=not args.without_embeddings)

@@ -140,7 +140,8 @@ def test_recognize_custom_threshold(monkeypatch):
 
 
 def test_recognize_threshold_is_inclusive(monkeypatch):
-    monkeypatch.setattr(recognizer, "_predict", fake_predictions(("ramen", 0.40), ("pho", 0.30)))
+    exactly = config.CONFIDENCE_THRESHOLD
+    monkeypatch.setattr(recognizer, "_predict", fake_predictions(("ramen", exactly), ("pho", 0.1)))
     assert recognize(Image.new("RGB", (10, 10))).is_confident is True
 
 

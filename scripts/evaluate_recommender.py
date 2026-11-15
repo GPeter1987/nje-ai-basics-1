@@ -22,8 +22,16 @@ from pipeline.recommender import recommend  # noqa: E402
 from pipeline.schemas import DishAnalysis  # noqa: E402
 
 EVALUATION_DISHES = (
-    "chicken_curry", "pizza", "sushi", "hamburger", "caesar_salad", "ramen",
-    "spaghetti_bolognese", "grilled_salmon", "apple_pie", "falafel",
+    "chicken_curry",
+    "pizza",
+    "sushi",
+    "hamburger",
+    "caesar_salad",
+    "ramen",
+    "spaghetti_bolognese",
+    "grilled_salmon",
+    "apple_pie",
+    "falafel",
 )
 
 
@@ -38,24 +46,38 @@ def export(output: Path) -> int:
         if food is None:
             raise LookupError(key)
         analysis = DishAnalysis(
-            dish=key, category=food["category"], cuisine=food["cuisine"],
-            main_ingredients=food["ingredients"], cooking_method=food["tags"][0],
-            allergens=food["allergens"], flavor_profile=food["tags"][1:],
-            dietary_tags=[], description=food["description_en"], source="fallback",
+            dish=key,
+            category=food["category"],
+            cuisine=food["cuisine"],
+            main_ingredients=food["ingredients"],
+            cooking_method=food["tags"][0],
+            allergens=food["allergens"],
+            flavor_profile=food["tags"][1:],
+            dietary_tags=[],
+            description=food["description_en"],
+            source="fallback",
         )
         inputs.append(analysis.model_dump())
         for rank, item in enumerate(recommend(analysis), 1):
-            rows.append({
-                "dish": key, "rank": rank, "recommendation": item.key,
-                "name_hu": item.name_hu, "similarity": round(item.similarity, 4),
-                "reason": item.reason, "relevant": "", "note": "",
-            })
+            rows.append(
+                {
+                    "dish": key,
+                    "rank": rank,
+                    "recommendation": item.key,
+                    "name_hu": item.name_hu,
+                    "similarity": round(item.similarity, 4),
+                    "reason": item.reason,
+                    "relevant": "",
+                    "note": "",
+                }
+            )
     with target.open("w", encoding="utf-8-sig", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=list(rows[0]))
         writer.writeheader()
         writer.writerows(rows)
     (output / "reference_analyses.json").write_text(
-        json.dumps(inputs, ensure_ascii=False, indent=2) + "\n", encoding="utf-8",
+        json.dumps(inputs, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
     )
     return len(rows)
 
@@ -79,9 +101,11 @@ def summarize(path: Path) -> dict:
         }
     complete = all(item["rated"] == 5 for item in per_dish.values())
     return {
-        "rated": sum(item["rated"] for item in per_dish.values()), "total": 50,
+        "rated": sum(item["rated"] for item in per_dish.values()),
+        "total": 50,
         "mean_precision_at_5": sum(item["precision_at_5"] for item in per_dish.values()) / 10
-        if complete else None,
+        if complete
+        else None,
         "per_dish": per_dish,
     }
 

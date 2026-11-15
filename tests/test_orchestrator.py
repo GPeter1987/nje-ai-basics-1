@@ -33,10 +33,12 @@ def png_bytes() -> bytes:
 
 
 @pytest.fixture(autouse=True)
-def isolate_c_modules(request, monkeypatch):
-    """A stub-ág tesztje ne függjön a valódi C adatbázistól vagy modellletöltéstől.
+def isolate_b_and_c_modules(request, monkeypatch, tmp_path):
+    """Az orchestrator tesztjei ne töltsenek valódi LLM-et, és ne írjanak a valódi DB-be.
 
-    A valódi C-modulok integrációját a test_c_pipeline.py ellenőrzi.
+    Alapból B és C modulja is helyettesítőt ad (NotImplementedError -> stub); az egyes
+    tesztek ezt felülírhatják. A valódi modulok integrációját a test_analyzer.py és a
+    test_c_pipeline.py, a valódi modellekkel futó láncot a `slow` teszt ellenőrzi.
     """
     if request.node.get_closest_marker("slow"):
         return
@@ -44,6 +46,8 @@ def isolate_c_modules(request, monkeypatch):
     def pending(*args, **kwargs):
         raise NotImplementedError("A tesztben szándékosan helyettesítő fut.")
 
+    monkeypatch.setattr(config, "DB_PATH", tmp_path / "nincs.db")
+    monkeypatch.setattr(analyzer, "analyze", pending)
     monkeypatch.setattr(nutrition_module, "compute_nutrition", pending)
     monkeypatch.setattr(recommender, "recommend", pending)
 
@@ -129,6 +133,25 @@ def test_step_logs_have_timing_and_json_output(fake_vit):
         assert step.duration_ms >= 0
         assert step.output is not None
     PipelineResult.model_validate_json(result.model_dump_json())  # JSON-ba menthető
+
+
+def test_llm_backend_is_forwarded_to_analyzer(fake_vit, monkeypatch):
+    """F12: a felületen választott backend az orchestratoron át jut el a 2. modellig."""
+    seen = []
+
+    def fake_analyze(recognition, backend=None):
+        seen.append(backend)
+        return stubs.minimal_analysis(recognition, source="llm")
+
+    monkeypatch.setattr(analyzer, "analyze", fake_analyze)
+    run_pipeline(png_bytes(), llm_backend="ollama")
+    run_pipeline(png_bytes())
+    assert seen == ["ollama", None]
+
+
+def test_unknown_llm_backend_rejected():
+    with pytest.raises(ValueError, match="LLM-backend"):
+        run_pipeline(png_bytes(), llm_backend="gpt")
 
 
 # --- Hibakezelés ---------------------------------------------------------------

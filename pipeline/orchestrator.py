@@ -17,7 +17,7 @@ Két felhasználási mód:
   1. Egyben:     run_pipeline(feltoltott_fajl, grams=250, mode="similar")
   2. Két lépésben, a Streamlit-felülethez, ahol alacsony bizonyosságnál a
      felhasználó választ a két lépés között (F3):
-         recognition, steps = recognize_image(feltoltott_fajl, threshold=0.4)
+         recognition, steps = recognize_image(feltoltott_fajl, threshold=0.5)
          ... a felhasználó választ: recognition = apply_selection(recognition, "ramen", steps)
          result = continue_pipeline(recognition, grams=250, mode="similar", steps=steps)
 """
@@ -179,15 +179,24 @@ def continue_pipeline(
     mode: RecommendMode = config.DEFAULT_RECOMMEND_MODE,
     k: int = config.RECOMMEND_TOP_K,
     steps: list[StepLog] | None = None,
+    llm_backend: str | None = None,
 ) -> PipelineResult:
-    """A lánc folytatása a (megerősített) felismeréstől."""
-    _validate_inputs(grams, mode)
+    """A lánc folytatása a (megerősített) felismeréstől.
+
+    llm_backend: a 2. modell futtatója (F12); None esetén a config.LLM_BACKEND.
+    """
+    _validate_inputs(grams, mode, llm_backend)
     steps = list(steps or [])
+
+    def run_analyzer() -> DishAnalysis:
+        if llm_backend is None:
+            return analyzer.analyze(recognition)
+        return analyzer.analyze(recognition, backend=llm_backend)
 
     # 2. modell: az 1. modell kimenete a bemenete
     analysis, log = _run_step(
         STEP_ANALYZE,
-        lambda: analyzer.analyze(recognition),
+        run_analyzer,
         log_input=recognition,
         stub=lambda: stubs.stub_analyze(recognition),
         fallback=lambda: stubs.minimal_analysis(recognition),
@@ -234,6 +243,7 @@ def run_pipeline(
     threshold: float | None = None,
     selected_key: str | None = None,
     k: int = config.RECOMMEND_TOP_K,
+    llm_backend: str | None = None,
 ) -> PipelineResult:
     """A teljes lánc egy képre.
 
@@ -241,7 +251,7 @@ def run_pipeline(
     Alacsony bizonyosságnál választás nélkül is továbbmegy: ilyenkor a 2. modell
     a top-3 jelöltet is megkapja (recognition.needs_review == True).
     """
-    _validate_inputs(grams, mode)
+    _validate_inputs(grams, mode, llm_backend)
 
     recognition, steps = recognize_image(source, threshold=threshold)
     if recognition is None:
@@ -251,13 +261,17 @@ def run_pipeline(
     if selected_key is not None and selected_key != recognition.key:
         recognition = apply_selection(recognition, selected_key, steps)
 
-    return continue_pipeline(recognition, grams=grams, mode=mode, k=k, steps=steps)
+    return continue_pipeline(
+        recognition, grams=grams, mode=mode, k=k, steps=steps, llm_backend=llm_backend
+    )
 
 
-def _validate_inputs(grams: float, mode: str) -> None:
+def _validate_inputs(grams: float, mode: str, llm_backend: str | None = None) -> None:
     if not config.MIN_GRAMS <= grams <= config.MAX_GRAMS:
         raise ValueError(
             f"Az adag {config.MIN_GRAMS} és {config.MAX_GRAMS} g között lehet (kapott: {grams})."
         )
     if mode not in config.RECOMMEND_MODES:
         raise ValueError(f"Ismeretlen ajánlási mód: {mode}")
+    if llm_backend is not None and llm_backend not in config.LLM_BACKENDS:
+        raise ValueError(f"Ismeretlen LLM-backend: {llm_backend}")

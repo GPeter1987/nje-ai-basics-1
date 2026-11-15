@@ -20,7 +20,8 @@ Csak a MiniLM szükséges a C-részhez; a fotó felismerése a ViT-modellt is le
 - **F4:** 250 g alapadag, 10–2000 g határok.
 - **F6:** adatbázis-alapú arányosítás, egész kcal és egytizedes makrók.
 - **F7–F8:** MiniLM, koszinusz top-5, saját étel kizárása, szigorúan kevesebb
-  kcal/100 g mód, a Qwen-elemzés allergénjeiből épített kizárás, indoklás.
+  kcal/100 g mód, a Qwen-elemzés és a felismert étel adatbázisban tárolt
+  allergénjeinek uniójából épített kizárás, indoklás.
 - **F10–F11:** kifejezett gombnyomásra mentés, előzménytábla és dátum szerinti
   napi összeg. A diagram a makrókat mutatja; a napösszeg nem a 200 soros UI-limitből számol.
 - Magyar Streamlit-felület: Elemzés / Pipeline / Előzmények, kártyák,
@@ -64,20 +65,18 @@ Az eltéréseket az építő figyelmeztetésként kiírja, minden tápérték fo
 
 ## Kapcsolódás A és B munkájához
 
-A közös `pipeline/schemas.py`, `config.py`, `recognizer.py`, `orchestrator.py`,
-`analyzer.py` és `llm_backends.py` változatlan maradt. A C implementációi
-ugyanazt az interfészt használják:
+A C implementációi a közös interfészt használják:
 
 ```python
 recommend(analysis, mode="similar", k=5)  # list[Recommendation]
 compute_nutrition(dish_key, grams)       # Nutrition
 ```
 
-**B elemzője jelenleg NotImplementedError-t dob.** Az A orchestratora ilyenkor
-jelölt tartalék elemzéssel folytatja a láncot. A felület ezt feltűnően jelzi;
-ez nem bizonyít valódi hárommodelles működést. Allergénmentes módot tartalék
-elemzésből szándékosan nem engedünk. A backend kiválasztásához a B-modul API-ja
-szükséges; ezért a UI jelenleg csak kiírja a konfigurált backendet.
+B elemzője elkészült, a teljes ViT–Qwen–MiniLM lánc valódi modellekkel fut.
+Ha az elemzés hibára fut, az A orchestratora jelölt tartalék elemzéssel folytatja
+a láncot, a felület ezt feltűnően jelzi. Allergénmentes módot tartalék elemzésből
+szándékosan nem engedünk. Az LLM-backend (Transformers / Ollama) az oldalsávban
+választható; ha az Ollama nem fut, a felület útmutatást ad.
 
 B használhatja a következő kész adatbázis-függvényeket:
 
@@ -98,11 +97,17 @@ Az allergénlista angol kulcsokat tartalmaz: `gluten`, `crustaceans`, `eggs`,
 `sulphites`, `lupin`, `molluscs`. A gyakori magyar neveket és szinonimákat a
 `data/terms.py` egységesíti. Ismeretlen allergénnél a szűrés hibával leáll,
 nem enged át bizonytalan ételt. Kevesebb mint öt találatnál nem lazít a szűrőn.
+Az allergénmentes mód az elemzés allergénjei mellett a felismert étel
+adatbázis-sorának allergénjeit is kizárja, mert az elemzés kihagyhat allergént
+(a tesztben a sushinál a halat). Az elemzés így csak bővítheti a listát, nem szűkítheti.
+Az elemzés allergénjei a Qwen által adott összetevőkből, szabályok alapján
+készülnek (lásd a README „Az elemzés pontossága” részét).
 
 A MiniLM keresési szövege a **kapott DishAnalysis strukturált mezőiből** készül.
 A magyar szavakat ellenőrizhető szótár fordítja angolra. Ez nem általános fordító:
 új magyar összetevőkhöz a szótárt bővíteni kell; ismeretlen ékezetes mezők
-kimaradnak. Legjobb integráció: B angol kanonikus mezőket ad, a UI fordítva jeleníthet meg.
+kimaradnak. B elemzője angol mezőket ad; a felület ezeket a `pipeline/hungarian.py`
+szótárával magyarul jeleníti meg (F13), az ajánlások indoklásával együtt.
 
 ## Adatbázis és hibakezelés
 
@@ -155,3 +160,11 @@ igazolja azt, és a három AI-modell teljes láncának kiértékelését sem hel
   Streamlit-kivétel nélkül. A szervert a próba után leállítottuk.
 - Az 50 ajánlás értékelőlapja elkészült; emberi minősítést nem írtunk bele.
 - A teljes ViT–Qwen–MiniLM láncot valódi Qwennel nem teszteltük, mert B modulja hiányzik.
+
+### Frissítés (2026. november 15.)
+
+- B modulja és a merge után: 196 gyors teszt sikeres; a 4 lassú teszt (valódi
+  ViT, Qwen Ollamával, MiniLM a `samples/` képein) is sikeres.
+- Az élő Streamlit-próbán a teljes lánc lefutott, az elemzés magyarul jelent meg.
+- Hiányzó adatbázisnál a cache- és előzményfüggvények már nem hoznak létre üres
+  `nutrilens.db` fájlt, hanem hibát jeleznek (a felület ezt kezeli).

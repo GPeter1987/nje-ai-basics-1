@@ -14,8 +14,18 @@ import streamlit as st
 
 import config
 from data import db
-from pipeline import orchestrator, recognizer, recommender
+from pipeline import hungarian, llm_backends, orchestrator, recognizer, recommender
 from pipeline.schemas import Nutrition, PipelineResult
+
+LLM_BACKEND_LABELS = {
+    "transformers": "Transformers (Hugging Face, alapértelmezett)",
+    "ollama": "Ollama (lokális szerver, gyorsabb)",
+}
+OLLAMA_HELP = (
+    "Az Ollama nem fut. Indítsd el az Ollama alkalmazást (vagy: `ollama serve`), "
+    f"és töltsd le a modellt: `ollama pull {config.OLLAMA_MODEL}`. "
+    "Másik lehetőség: válts a Transformers-backendre az oldalsávban."
+)
 
 
 @st.cache_resource(show_spinner="MiniLM ajánlómodell betöltése…")
@@ -25,16 +35,24 @@ def load_recommender():
 
 def nutrition_cards(values: Nutrition | dict) -> None:
     data = values.model_dump() if isinstance(values, Nutrition) else values
-    for column, (key, label, unit) in zip(st.columns(4), [
-        ("kcal", "Energia", "kcal"), ("protein", "Fehérje", "g"),
-        ("carbs", "Szénhidrát", "g"), ("fat", "Zsír", "g"),
-    ], strict=True):
+    for column, (key, label, unit) in zip(
+        st.columns(4),
+        [
+            ("kcal", "Energia", "kcal"),
+            ("protein", "Fehérje", "g"),
+            ("carbs", "Szénhidrát", "g"),
+            ("fat", "Zsír", "g"),
+        ],
+        strict=True,
+    ):
         column.metric(label, f"{data[key]:g} {unit}")
 
 
 def render_result(result: PipelineResult, database_ready: bool) -> None:
     for step in result.steps:
-        if step.error:
+        if step.error and llm_backends.OLLAMA_UNAVAILABLE in step.error:
+            st.error(OLLAMA_HELP)
+        elif step.error:
             st.warning(f"{step.name}: {step.error}")
     if result.nutrition:
         nutrition = result.nutrition
@@ -47,11 +65,17 @@ def render_result(result: PipelineResult, database_ready: bool) -> None:
                 "USDA-alapanyagokból számolt mintarecept; a tényleges recept és adag eltérhet."
             )
         with st.expander("Makrotápanyagok energiamegoszlása és adatforrás"):
-            st.bar_chart(pd.DataFrame({"kcal": {
-                "Fehérje": nutrition.protein * 4,
-                "Szénhidrát": nutrition.carbs * 4,
-                "Zsír": nutrition.fat * 9,
-            }}))
+            st.bar_chart(
+                pd.DataFrame(
+                    {
+                        "kcal": {
+                            "Fehérje": nutrition.protein * 4,
+                            "Szénhidrát": nutrition.carbs * 4,
+                            "Zsír": nutrition.fat * 9,
+                        }
+                    }
+                )
+            )
             if database_ready:
                 food = db.get_food(nutrition.dish_key)
                 if food:
@@ -68,23 +92,29 @@ def render_result(result: PipelineResult, database_ready: bool) -> None:
                 "Nem valódi Qwen-elemzés. A B modul még hiányzik, vagy az elemzés hibára futott. "
                 "Az összetevők és allergének ebből nem állapíthatók meg megbízhatóan."
             )
-        st.write(analysis.description)
+        hu = hungarian.analysis_hu(analysis)  # F13: szótáras magyar megjelenítés
+        st.write(hu["summary"])
         left, right = st.columns(2)
         with left:
-            st.write(f"**Kategória:** {analysis.category} · **Konyha:** {analysis.cuisine}")
-            st.write("**Összetevők:** " + ", ".join(analysis.main_ingredients))
-            st.write(f"**Elkészítés:** {analysis.cooking_method}")
+            st.write(f"**Kategória:** {hu['category']} · **Konyha:** {hu['cuisine']}")
+            st.write("**Összetevők:** " + ", ".join(hu["main_ingredients"]))
+            st.write(f"**Elkészítés:** {hu['cooking_method']}")
         with right:
-            st.write(
-                "**Allergének:** " + (", ".join(analysis.allergens) or "Nincs jelzett allergén")
+            st.write("**Allergének:** " + (", ".join(hu["allergens"]) or "Nincs jelzett allergén"))
+            st.write("**Ízprofil:** " + (", ".join(hu["flavor_profile"]) or "–"))
+            st.write("**Diétás címkék:** " + (", ".join(hu["dietary_tags"]) or "–"))
+        if analysis.source != "fallback":
+            st.caption(
+                "Az allergének a modell által megadott összetevőkből, szabályok alapján "
+                "készülnek. A szótárban nem szereplő kifejezések angolul maradnak."
             )
-            st.write("**Ízprofil:** " + (", ".join(analysis.flavor_profile) or "–"))
-            st.write("**Diétás címkék:** " + (", ".join(analysis.dietary_tags) or "–"))
+        with st.expander("Az AI eredeti, angol nyelvű elemzése"):
+            st.write(analysis.description)
+            st.json(analysis.model_dump(mode="json", exclude={"source"}))
 
     st.subheader("Ajánlott alternatívák")
     st.caption(
-        "A hasonlósági pontszám nem felismerési valószínűség. "
-        "A kcal-eltérés mindig 100 g-ra szól."
+        "A hasonlósági pontszám nem felismerési valószínűség. A kcal-eltérés mindig 100 g-ra szól."
     )
     if result.mode == "allergen_free":
         st.warning(
@@ -94,8 +124,7 @@ def render_result(result: PipelineResult, database_ready: bool) -> None:
         )
     if not result.recommendations:
         st.info(
-            "Nincs megjeleníthető ajánlás. Nézd meg a Pipeline fület "
-            "és a fenti figyelmeztetéseket."
+            "Nincs megjeleníthető ajánlás. Nézd meg a Pipeline fület és a fenti figyelmeztetéseket."
         )
     elif len(result.recommendations) < config.RECOMMEND_TOP_K:
         st.info(f"A szűrőknek csak {len(result.recommendations)} étel felel meg.")
@@ -105,8 +134,12 @@ def render_result(result: PipelineResult, database_ready: bool) -> None:
             name.markdown(f"**{item.name_hu or item.name_en}**")
             name.caption(item.name_en)
             similarity.metric("Hasonlóság", f"{item.similarity:.1%}")
-            kcal.metric("kcal / 100 g", f"{item.kcal_100g:g}",
-                        delta=f"{item.kcal_diff_100g:+g}", delta_color="inverse")
+            kcal.metric(
+                "kcal / 100 g",
+                f"{item.kcal_100g:g}",
+                delta=f"{item.kcal_diff_100g:+g}",
+                delta_color="inverse",
+            )
             st.write(item.reason)
 
     if result.nutrition and result.recognition and database_ready:
@@ -122,7 +155,9 @@ def render_result(result: PipelineResult, database_ready: bool) -> None:
             st.success("Az étkezés mentve. Új elemzéssel rögzíthetsz újabb étkezést.")
 
 
-def render_analysis(grams: int, mode: str, threshold: float, database_ready: bool) -> None:
+def render_analysis(
+    grams: int, mode: str, threshold: float, llm_backend: str, database_ready: bool
+) -> None:
     uploaded = st.file_uploader("Ételfotó feltöltése", type=list(config.ALLOWED_IMAGE_TYPES))
     st.caption("JPG, PNG vagy WEBP · legfeljebb 10 MB · a felismerő csak 101 ételtípust ismer.")
     content = uploaded.getvalue() if uploaded else None
@@ -158,16 +193,22 @@ def render_analysis(grams: int, mode: str, threshold: float, database_ready: boo
     st.subheader(recognition.name_hu or recognition.name_en)
     st.metric("A modell bizonyossága", f"{recognition.score:.1%}")
     st.progress(recognition.score)
-    st.bar_chart(pd.DataFrame({"Bizonyosság (%)": {
-        c.name_hu or c.name_en: c.score * 100 for c in recognition.top3
-    }}))
+    st.bar_chart(
+        pd.DataFrame(
+            {"Bizonyosság (%)": {c.name_hu or c.name_en: c.score * 100 for c in recognition.top3}}
+        )
+    )
     if recognition.needs_review:
         st.warning("Alacsony bizonyosság! Válaszd ki vagy erősítsd meg az ételt a folytatás előtt.")
     choices = dict(recognizer.dish_choices())
     keys = list(dict.fromkeys([c.key for c in recognition.top3] + list(choices)))
-    selected = st.selectbox("Nem ez? Válaszd ki vagy erősítsd meg:", keys,
-                            format_func=choices.__getitem__, key="selected_dish")
-    settings = (grams, mode, selected)
+    selected = st.selectbox(
+        "Nem ez? Válaszd ki vagy erősítsd meg:",
+        keys,
+        format_func=choices.__getitem__,
+        key="selected_dish",
+    )
+    settings = (grams, mode, selected, llm_backend)
     if settings != st.session_state.get("result_settings"):
         st.session_state.pop("result", None)
         st.session_state.pop("saved", None)
@@ -182,7 +223,9 @@ def render_analysis(grams: int, mode: str, threshold: float, database_ready: boo
                 load_recommender()
             except Exception as exc:
                 st.warning(f"A MiniLM nem tölthető be: {exc}")
-            result = orchestrator.continue_pipeline(confirmed, grams=grams, mode=mode, steps=steps)
+            result = orchestrator.continue_pipeline(
+                confirmed, grams=grams, mode=mode, steps=steps, llm_backend=llm_backend
+            )
         st.session_state.result = result
         st.session_state.result_settings = settings
         st.session_state.saved = False
@@ -222,18 +265,42 @@ def render_history(database_ready: bool) -> None:
         summary = db.daily_summary(day)
         st.subheader(f"Napi összesítő · {summary['meals']} étkezés")
         nutrition_cards(summary)
-        st.bar_chart(pd.DataFrame({"gramm": {
-            "Fehérje": summary["protein"], "Szénhidrát": summary["carbs"], "Zsír": summary["fat"],
-        }}))
+        st.bar_chart(
+            pd.DataFrame(
+                {
+                    "gramm": {
+                        "Fehérje": summary["protein"],
+                        "Szénhidrát": summary["carbs"],
+                        "Zsír": summary["fat"],
+                    }
+                }
+            )
+        )
         history = db.list_history()
         if history:
-            frame = pd.DataFrame(history)[[
-                "created_at", "name_hu", "grams", "kcal", "protein", "carbs", "fat", "is_estimate",
-            ]].rename(columns={
-                "created_at": "Időpont", "name_hu": "Étel", "grams": "Adag (g)",
-                "kcal": "Energia (kcal)", "protein": "Fehérje (g)", "carbs": "Szénhidrát (g)",
-                "fat": "Zsír (g)", "is_estimate": "AI-becslés",
-            })
+            frame = pd.DataFrame(history)[
+                [
+                    "created_at",
+                    "name_hu",
+                    "grams",
+                    "kcal",
+                    "protein",
+                    "carbs",
+                    "fat",
+                    "is_estimate",
+                ]
+            ].rename(
+                columns={
+                    "created_at": "Időpont",
+                    "name_hu": "Étel",
+                    "grams": "Adag (g)",
+                    "kcal": "Energia (kcal)",
+                    "protein": "Fehérje (g)",
+                    "carbs": "Szénhidrát (g)",
+                    "fat": "Zsír (g)",
+                    "is_estimate": "AI-becslés",
+                }
+            )
             frame["AI-becslés"] = frame["AI-becslés"].astype(bool)
             st.dataframe(frame, hide_index=True)
             st.caption("Az utolsó 200 étkezés. A napi összeg az összes mentett étkezésből készül.")
@@ -250,13 +317,33 @@ def main() -> None:
     st.caption("Egyetemi bemutató · lokális modellek · magyar felület")
     with st.sidebar:
         st.header("Beállítások")
-        grams = st.number_input("Adag (g)", min_value=config.MIN_GRAMS, max_value=config.MAX_GRAMS,
-                                value=config.DEFAULT_GRAMS, step=10)
-        mode = st.selectbox("Ajánlási mód", list(config.RECOMMEND_MODES),
-                            format_func=config.RECOMMEND_MODES.__getitem__)
-        threshold = st.slider("Bizonyossági küszöb (%)", 0, 100,
-                              round(config.CONFIDENCE_THRESHOLD * 100)) / 100
-        st.caption(f"LLM-backend: {config.LLM_BACKEND}. A backendváltás a B modul feladata.")
+        grams = st.number_input(
+            "Adag (g)",
+            min_value=config.MIN_GRAMS,
+            max_value=config.MAX_GRAMS,
+            value=config.DEFAULT_GRAMS,
+            step=10,
+        )
+        mode = st.selectbox(
+            "Ajánlási mód",
+            list(config.RECOMMEND_MODES),
+            format_func=config.RECOMMEND_MODES.__getitem__,
+        )
+        threshold = (
+            st.slider("Bizonyossági küszöb (%)", 0, 100, round(config.CONFIDENCE_THRESHOLD * 100))
+            / 100
+        )
+        backends = list(config.LLM_BACKENDS)
+        llm_backend = st.selectbox(
+            "LLM-backend (2. modell)",
+            backends,
+            index=backends.index(config.LLM_BACKEND) if config.LLM_BACKEND in backends else 0,
+            format_func=lambda name: LLM_BACKEND_LABELS.get(name, name),
+        )
+        if llm_backend == "ollama" and not llm_backends.ollama_available():
+            st.error(OLLAMA_HELP)
+        elif llm_backend == "transformers":
+            st.caption("Az első elemzéskor betöltődik a Qwen (kb. 3 GB RAM, 1-2 perc).")
         st.divider()
         st.warning(
             "Az alkalmazás nem orvosi vagy dietetikai tanácsadás. A tápértékek receptfüggők."
@@ -271,7 +358,7 @@ def main() -> None:
         st.error(f"Adatbázishiba: {exc}. Futtasd: python scripts/build_db.py")
     analysis_tab, pipeline_tab, history_tab = st.tabs(["Elemzés", "Pipeline", "Előzmények"])
     with analysis_tab:
-        render_analysis(grams, mode, threshold, database_ready)
+        render_analysis(grams, mode, threshold, llm_backend, database_ready)
     with pipeline_tab:
         render_pipeline()
     with history_tab:

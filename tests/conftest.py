@@ -26,8 +26,13 @@ def c_database(tmp_path, monkeypatch):
 @pytest.fixture
 def dish_analysis():
     return DishAnalysis(
-        dish="chicken_curry", category="főétel", cuisine="indiai",
+        dish="chicken_curry",
+        category="főétel",
+        cuisine="indiai",
         main_ingredients=["csirkehús", "paradicsom", "hagyma", "curry fűszerkeverék"],
-        cooking_method="párolt", allergens=["tej"], flavor_profile=["fűszeres", "krémes"],
-        dietary_tags=["gluténmentes"], description="Fűszeres csirkeétel.",
+        cooking_method="párolt",
+        allergens=["tej"],
+        flavor_profile=["fűszeres", "krémes"],
+        dietary_tags=["gluténmentes"],
+        description="Fűszeres csirkeétel.",
     )

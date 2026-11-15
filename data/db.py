@@ -74,6 +74,8 @@ def init_db() -> None:
 
 
 def _require_db() -> None:
+    """Hiányzó adatbázisnál hiba, ne egy üres fájl jöjjön létre (az sqlite3.connect
+    magától létrehozná, és utána a felület „kész” adatbázist látna táblák nélkül)."""
     if not Path(config.DB_PATH).is_file():
         raise FileNotFoundError("Nincs adatbázis. Futtasd: python scripts/build_db.py")
 
@@ -100,6 +102,7 @@ def list_foods() -> list[dict]:
 
 def save_analysis(analysis: DishAnalysis, model: str) -> None:
     """B modulja használhatja; a különböző backendek cache-e nem keveredik."""
+    _require_db()
     with connection() as conn:
         conn.execute(
             "INSERT OR REPLACE INTO analysis_cache VALUES (?, ?, ?, ?)",
@@ -108,6 +111,7 @@ def save_analysis(analysis: DishAnalysis, model: str) -> None:
 
 
 def get_analysis(dish_key: str, model: str) -> DishAnalysis | None:
+    _require_db()
     with connection() as conn:
         row = conn.execute(
             "SELECT json FROM analysis_cache WHERE dish_key = ? AND model = ?",
@@ -126,18 +130,34 @@ def _now() -> str:
 def save_history(recognition: Recognition, nutrition: Nutrition) -> int:
     if recognition.key != nutrition.dish_key:
         raise ValueError("A felismerés és a tápérték ételkulcsa eltér.")
-    if not all(math.isfinite(v) for v in (
-        nutrition.grams, nutrition.protein, nutrition.carbs, nutrition.fat,
-    )):
+    if not all(
+        math.isfinite(v)
+        for v in (
+            nutrition.grams,
+            nutrition.protein,
+            nutrition.carbs,
+            nutrition.fat,
+        )
+    ):
         raise ValueError("Az előzmény csak véges tápértékeket tartalmazhat.")
+    _require_db()
     with connection() as conn:
         cursor = conn.execute(
             """INSERT INTO history
             (created_at, image_hash, dish_key, confidence, grams, kcal, protein, carbs, fat,
              is_estimate) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (_now(), recognition.image_hash, recognition.key, recognition.score,
-             nutrition.grams, nutrition.kcal, nutrition.protein, nutrition.carbs,
-             nutrition.fat, int(nutrition.is_estimate)),
+            (
+                _now(),
+                recognition.image_hash,
+                recognition.key,
+                recognition.score,
+                nutrition.grams,
+                nutrition.kcal,
+                nutrition.protein,
+                nutrition.carbs,
+                nutrition.fat,
+                int(nutrition.is_estimate),
+            ),
         )
         return cursor.lastrowid
 
@@ -145,17 +165,23 @@ def save_history(recognition: Recognition, nutrition: Nutrition) -> int:
 def list_history(limit: int = 200) -> list[dict]:
     if not isinstance(limit, int) or limit < 1:
         raise ValueError("A limit pozitív egész szám legyen.")
+    _require_db()
     with connection() as conn:
-        return [dict(row) for row in conn.execute(
-            """SELECT h.*, COALESCE(f.name_hu, h.dish_key) AS name_hu
+        return [
+            dict(row)
+            for row in conn.execute(
+                """SELECT h.*, COALESCE(f.name_hu, h.dish_key) AS name_hu
             FROM history h LEFT JOIN foods f ON f.key = h.dish_key
-            ORDER BY h.created_at DESC, h.id DESC LIMIT ?""", (limit,),
-        )]
+            ORDER BY h.created_at DESC, h.id DESC LIMIT ?""",
+                (limit,),
+            )
+        ]
 
 
 def daily_summary(day: date | None = None) -> dict:
     """Helyi naptári nap szerint; nem csak a UI-ban listázott utolsó 200 sorból."""
     day = day or date.today()
+    _require_db()
     with connection() as conn:
         row = conn.execute(
             """SELECT COUNT(*) AS meals, COALESCE(SUM(kcal), 0) AS kcal,

@@ -9,9 +9,15 @@ from scripts.build_db import build_database
 
 
 def test_c_modules_in_full_chain(c_database, dish_analysis, monkeypatch):
-    monkeypatch.setattr(recognizer, "_predict", lambda image: [
-        ("chicken_curry", 0.8), ("ramen", 0.1), ("pho", 0.05),
-    ])
+    monkeypatch.setattr(
+        recognizer,
+        "_predict",
+        lambda image: [
+            ("chicken_curry", 0.8),
+            ("ramen", 0.1),
+            ("pho", 0.05),
+        ],
+    )
     monkeypatch.setattr(analyzer, "analyze", lambda recognition: dish_analysis)
     result = orchestrator.run_pipeline(Image.new("RGB", (32, 32)), grams=300, mode="healthier")
     assert result.ok

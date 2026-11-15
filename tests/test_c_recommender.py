@@ -61,9 +61,35 @@ def test_allergens_from_analysis_drive_filter(c_database, dish_analysis):
         )
 
 
-@pytest.mark.parametrize("updates", [
-    {"source": "fallback"}, {"allergens": ["ismeretlen allergén"]},
-])
+def test_database_allergens_excluded_even_if_llm_misses_them(c_database, dish_analysis):
+    """Regresszió: a Qwen a sushinál a halat kihagyta (molluscs-t mondott), és a szűrő
+    sashimit ajánlott. Az adatbázis allergénjeit akkor is ki kell zárni, ha az LLM nem jelzi."""
+    assert "fish" in db.get_food("sushi")["allergens"]
+    analysis = dish_analysis.model_copy(update={"dish": "sushi", "allergens": ["molluscs"]})
+    results = recommender.recommend(analysis, mode="allergen_free", k=200)
+    assert results
+    for item in results:
+        assert not {"fish", "molluscs"}.intersection(db.get_food(item.key)["allergens"])
+    assert "hal (adatbázis)" in results[0].reason
+    assert "puhatestűek (AI)" in results[0].reason
+
+
+def test_llm_allergens_still_extend_database_allergens(c_database, dish_analysis):
+    """Az LLM bővítheti a listát: a DB-ben allergénmentes ételnél is kizárja, amit talál."""
+    assert db.get_food("chicken_curry")["allergens"] == []
+    analysis = dish_analysis.model_copy(update={"allergens": ["peanuts"]})
+    results = recommender.recommend(analysis, mode="allergen_free", k=200)
+    assert all("peanuts" not in db.get_food(item.key)["allergens"] for item in results)
+    assert "földimogyoró (AI)" in results[0].reason
+
+
+@pytest.mark.parametrize(
+    "updates",
+    [
+        {"source": "fallback"},
+        {"allergens": ["ismeretlen allergén"]},
+    ],
+)
 def test_uncertain_allergens_fail_closed(c_database, dish_analysis, updates):
     with pytest.raises(ValueError):
         recommender.recommend(dish_analysis.model_copy(update=updates), mode="allergen_free")
@@ -75,12 +101,16 @@ def test_short_or_empty_results_do_not_relax_filter(c_database, dish_analysis):
     assert recommender.recommend(dish_analysis, mode="healthier") == []
 
 
-@pytest.mark.parametrize("column,value", [
-    ("embedding", None), ("embedding", b"bad"),
-    ("embedding", np.zeros(384, dtype=np.float32).tobytes()),
-    ("embedding", np.full(384, np.nan, dtype=np.float32).tobytes()),
-    ("embedding_model", "different-model"),
-])
+@pytest.mark.parametrize(
+    "column,value",
+    [
+        ("embedding", None),
+        ("embedding", b"bad"),
+        ("embedding", np.zeros(384, dtype=np.float32).tobytes()),
+        ("embedding", np.full(384, np.nan, dtype=np.float32).tobytes()),
+        ("embedding_model", "different-model"),
+    ],
+)
 def test_invalid_vectors_are_not_silently_used(c_database, dish_analysis, column, value):
     with db.connection() as conn:
         conn.execute(f"UPDATE foods SET {column} = ? WHERE key = 'apple_pie'", (value,))
@@ -88,9 +118,15 @@ def test_invalid_vectors_are_not_silently_used(c_database, dish_analysis, column
         recommender.recommend(dish_analysis)
 
 
-@pytest.mark.parametrize("mode,k", [
-    ("random", 5), ("similar", 0), ("similar", 2.5), ("similar", True),
-])
+@pytest.mark.parametrize(
+    "mode,k",
+    [
+        ("random", 5),
+        ("similar", 0),
+        ("similar", 2.5),
+        ("similar", True),
+    ],
+)
 def test_invalid_settings_rejected(c_database, dish_analysis, mode, k):
     with pytest.raises(ValueError):
         recommender.recommend(dish_analysis, mode=mode, k=k)

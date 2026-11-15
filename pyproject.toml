@@ -16,5 +16,9 @@ markers = [
 line-length = 100
 target-version = "py311"
 
+[tool.ruff.format]
+# a dokumentáció kódpéldáiban szándékosan igazított megjegyzések vannak
+exclude = ["*.md"]
+
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]

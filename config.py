@@ -26,8 +26,11 @@ SAMPLES_DIR = ROOT_DIR / "samples"
 RECOGNIZER_MODEL = "nateraw/food"
 RECOGNIZER_TOP_K = 3
 
-# Ez alatt a bizonyosság alatt figyelmeztetünk, és a felhasználó választ (F3)
-CONFIDENCE_THRESHOLD = 0.40
+# Ez alatt a bizonyosság alatt figyelmeztetünk, és a felhasználó választ (F3).
+# A specifikáció 40%-ot ír; az eval_images (54 Food-101 + 6 egyéb étel) mérése alapján
+# 50%: a Food-101 ételeknél ugyanannyiszor kérdez rá (1,9%), de a Food-101-en kívüli
+# ételeket 16,7% helyett 50%-ban jelzi (pl. lángos, gulyás). Lásd README.
+CONFIDENCE_THRESHOLD = 0.50
 
 # --- 2. modell: strukturált elemzés (Qwen2.5-1.5B-Instruct) -----------------
 
