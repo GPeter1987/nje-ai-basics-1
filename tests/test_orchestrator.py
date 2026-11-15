@@ -59,8 +59,14 @@ def step_names(result: PipelineResult) -> list[str]:
 # --- A teljes lánc stubokkal --------------------------------------------------
 
 
-def test_full_chain_with_stubs(fake_vit):
-    """B és C modulja még nincs kész -> stubok futnak, a lánc végigér."""
+def test_full_chain_with_stubs(fake_vit, monkeypatch):
+    """A még nem elérhető modulok stubjaival a lánc végigér."""
+    # Ebben a kifejezetten stub-tesztben ne töltsünk valódi LLM-et.
+    monkeypatch.setattr(
+        analyzer,
+        "analyze",
+        lambda recognition: (_ for _ in ()).throw(NotImplementedError("stub teszt")),
+    )
     result = run_pipeline(png_bytes(), grams=250, mode="similar")
 
     assert step_names(result) == [STEP_RECOGNIZE, STEP_ANALYZE, STEP_NUTRITION, STEP_RECOMMEND]
